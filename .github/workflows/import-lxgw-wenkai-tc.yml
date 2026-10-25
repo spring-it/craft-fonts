@@ -29,6 +29,8 @@ jobs:
           curl --fail --location --retry 3 --output "$LICENSE_PATH" "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lxgwwenkaitc/OFL.txt"
           test "$(git hash-object "$FONT_PATH")" = "58d7e60237900ffed823f929e13d2b2686483aba"
           test "$(git hash-object "$LICENSE_PATH")" = "4b0cd68dc387a714b67e4d652bb000c8e65ff0f9"
+          # The upstream OFL text has trailing whitespace; verify its pinned blob first, then normalize whitespace for a clean diff.
+          sed -i 's/[[:space:]]\+$//' "$LICENSE_PATH"
           FONT_SHA="$(sha256sum "$FONT_PATH" | cut -d ' ' -f 1)"
           export FONT_SHA
           python3 - <<'PY'
