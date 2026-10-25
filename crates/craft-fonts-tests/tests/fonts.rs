@@ -23,6 +23,30 @@ fn every_file_matches_its_manifest_checksum() {
     }
 }
 
+/// Prevent an archive import from adding the same font bytes under different filenames or
+/// adding two competing files for the same family/style. Font binary hashes are verified above.
+#[test]
+fn font_manifest_has_no_duplicate_binaries_or_family_styles() {
+    use std::collections::{HashMap, HashSet};
+
+    let mut by_hash = HashMap::new();
+    let mut variants = HashSet::new();
+    for font in FONTS {
+        if let Some(first_path) = by_hash.insert(font.sha256, font.file) {
+            panic!(
+                "duplicate font bytes: {} and {} have SHA-256 {}",
+                first_path, font.file, font.sha256
+            );
+        }
+        assert!(
+            variants.insert((font.family, font.style)),
+            "duplicate font family/style in manifest: {} {}",
+            font.family,
+            font.style
+        );
+    }
+}
+
 #[test]
 fn every_font_ships_its_licence() {
     for f in FONTS {
