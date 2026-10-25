@@ -1,0 +1,104 @@
+name: One-time import of approved Chinese fallback font
+
+on:
+  push:
+    paths:
+      - .github/workflows/import-lxgw-wenkai-tc.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import-font:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download pinned OFL font and update manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          FONT_DIR="fonts/lxgw-wenkai-tc"
+          FONT_PATH="$FONT_DIR/LXGWWenKaiTC-Regular.ttf"
+          LICENSE_PATH="$FONT_DIR/OFL.txt"
+          mkdir -p "$FONT_DIR"
+          curl --fail --location --retry 3 --output "$FONT_PATH" "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lxgwwenkaitc/LXGWWenKaiTC-Regular.ttf"
+          curl --fail --location --retry 3 --output "$LICENSE_PATH" "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lxgwwenkaitc/OFL.txt"
+          test "$(git hash-object "$FONT_PATH")" = "58d7e60237900ffed823f929e13d2b2686483aba"
+          test "$(git hash-object "$LICENSE_PATH")" = "4b0cd68dc387a714b67e4d652bb000c8e65ff0f9"
+          FONT_SHA="$(sha256sum "$FONT_PATH" | cut -d ' ' -f 1)"
+          export FONT_SHA
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(".")
+          font_line = (
+              "LXGW WenKai TC | Regular | fonts/lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf | "
+              f"Hans,Hant,Latn | OFL-1.1 | fonts/lxgw-wenkai-tc/OFL.txt | {os.environ['FONT_SHA']} | "
+              "https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lxgwwenkaitc"
+          )
+          manifest = root / "fonts/manifest.txt"
+          text = manifest.read_text()
+          if "fonts/lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf" not in text:
+              anchor = "Noto Sans CJK SC | Regular | fonts/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf"
+              if anchor not in text:
+                  raise SystemExit("Noto Sans CJK manifest anchor not found")
+              lines = text.splitlines()
+              index = next(i for i, line in enumerate(lines) if line.startswith(anchor))
+              lines.insert(index + 1, font_line)
+              manifest.write_text("\n".join(lines) + "\n")
+
+          attribution = root / "ATTRIBUTION.md"
+          text = attribution.read_text()
+          row = (
+              "| `fonts/lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf` | LXGW WenKai TC Regular | "
+              "The LXGW WenKai Project Authors | "
+              "[google/fonts@e7db6ca](https://github.com/google/fonts/tree/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/lxgwwenkaitc) | "
+              "OFL-1.1 (`fonts/lxgw-wenkai-tc/OFL.txt`) |"
+          )
+          if "fonts/lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf" not in text:
+              anchor = next((line for line in text.splitlines() if "fonts/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf" in line), None)
+              if anchor is None:
+                  raise SystemExit("Noto Sans CJK attribution anchor not found")
+              attribution.write_text(text.replace(anchor, anchor + "\n" + row))
+
+          readme = root / "README.md"
+          text = readme.read_text()
+          row = "| LXGW WenKai TC | Regular | Simplified and Traditional Chinese text-edit fallback | OFL-1.1 |"
+          if "| LXGW WenKai TC |" not in text:
+              anchor = "| Noto Sans CJK SC | Regular | Simplified Chinese UI and document text (sans) | OFL-1.1 |"
+              if anchor not in text:
+                  raise SystemExit("README font table anchor not found")
+              readme.write_text(text.replace(anchor, anchor + "\n" + row))
+
+          tests = root / "crates/craft-fonts-tests/tests/fonts.rs"
+          text = tests.read_text()
+          anchor = '"中文简体字文件编辑视图窗口帮助新建打开保存关闭撤销重做复制粘贴删除选择图层页面样式颜色导出打印设置",'
+          if anchor not in text:
+              raise SystemExit("Chinese coverage test anchor not found")
+          if '"胜"' not in text:
+              tests.write_text(text.replace(anchor, anchor + '\n            "胜",'))
+          PY
+
+      - name: Verify font metadata and coverage
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --workspace --locked
+          cargo test -p craft-fonts --features embed --locked
+
+      - name: Commit approved font asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add fonts/manifest.txt fonts/lxgw-wenkai-tc/LXGWWenKaiTC-Regular.ttf fonts/lxgw-wenkai-tc/OFL.txt ATTRIBUTION.md README.md crates/craft-fonts-tests/tests/fonts.rs
+          git diff --cached --check
+          git commit -m "feat(fonts): add OFL Chinese fallback face"
+          git push origin HEAD:main
