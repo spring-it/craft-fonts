@@ -184,6 +184,7 @@ fn simplified_chinese_fonts_cover_chinese_text() {
         "Hans",
         concat!(
             "中文简体字文件编辑视图窗口帮助新建打开保存关闭撤销重做复制粘贴删除选择图层页面样式颜色导出打印设置",
+            "胜",
             "，。、：；？！（）《》“”…",
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
         ),
